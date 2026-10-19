@@ -2,6 +2,11 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { HttpError, sendJson } from './http.js';
+import authRoutes from './routes/auth.js';
+
+// Every API module exports (db) => [[method, path, handler], ...]
+const ROUTE_MODULES = [authRoutes];
 
 const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const TYPES = {
@@ -12,11 +17,6 @@ const TYPES = {
   '.json': 'application/json; charset=utf-8',
   '.ico': 'image/x-icon',
 };
-
-function sendJson(res, status, data) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify(data));
-}
 
 function serveStatic(req, res) {
   let pathname;
@@ -36,12 +36,41 @@ function serveStatic(req, res) {
   });
 }
 
-// db: an open database from openDb(); routes added in later issues use it.
+// '/api/expenses/:id' -> /^\/api\/expenses\/([^/]+)$/ with param names ['id']
+function compile([method, pattern, handler]) {
+  const names = [];
+  const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, n) => (names.push(n), '([^/]+)')) + '$');
+  return { method, re, names, handler };
+}
+
+// db: an open database from openDb().
 export function createApp(db) {
-  return http.createServer((req, res) => {
-    const { pathname } = new URL(req.url, 'http://x');
-    if (pathname === '/api/health' && req.method === 'GET') return sendJson(res, 200, { status: 'ok' });
-    if (pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'Not found' });
+  const routes = ROUTE_MODULES.flatMap((m) => m(db)).map(compile);
+
+  async function handleApi(req, res, url) {
+    if (url.pathname === '/api/health' && req.method === 'GET') return sendJson(res, 200, { status: 'ok' });
+    for (const r of routes) {
+      const m = r.method === req.method && url.pathname.match(r.re);
+      if (!m) continue;
+      const params = Object.fromEntries(r.names.map((n, i) => [n, decodeURIComponent(m[i + 1])]));
+      const [status, data, headers] = await r.handler({ req, params, query: url.searchParams });
+      return sendJson(res, status, data, headers);
+    }
+    return sendJson(res, 404, { error: 'Not found' });
+  }
+
+  return http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://x');
+    if (url.pathname.startsWith('/api/')) {
+      try {
+        await handleApi(req, res, url);
+      } catch (e) {
+        if (e instanceof HttpError) return sendJson(res, e.status, { error: e.message });
+        console.error(e);
+        sendJson(res, 500, { error: 'Something went wrong' });
+      }
+      return;
+    }
     if (req.method !== 'GET') return sendJson(res, 404, { error: 'Not found' });
     serveStatic(req, res);
   });
