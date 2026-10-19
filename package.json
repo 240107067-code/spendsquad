@@ -1,0 +1,12 @@
+{
+  "name": "spendsquad",
+  "version": "0.1.0",
+  "description": "Weekly expense tracking and budget challenges for students",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  }
+}
