@@ -36,7 +36,8 @@ function serveStatic(req, res) {
   });
 }
 
-export function createApp() {
+// db: an open database from openDb(); routes added in later issues use it.
+export function createApp(db) {
   return http.createServer((req, res) => {
     const { pathname } = new URL(req.url, 'http://x');
     if (pathname === '/api/health' && req.method === 'GET') return sendJson(res, 200, { status: 'ok' });
