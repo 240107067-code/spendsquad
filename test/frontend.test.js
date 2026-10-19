@@ -56,7 +56,7 @@ test('index.html has a viewport meta tag and loads the module', async () => {
 });
 
 test('frontend code never assigns innerHTML', async () => {
-  for (const f of ['main', 'dom', 'auth', 'api', 'router', 'expenses', 'challenges']) {
+  for (const f of ['main', 'dom', 'auth', 'api', 'router', 'expenses', 'challenges', 'categories']) {
     const src = await (await app.get(`/js/${f}.js`)).text();
     assert.doesNotMatch(src, /innerHTML/, f);
   }
