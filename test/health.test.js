@@ -2,10 +2,11 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createApp } from '../src/app.js';
+import { openDb } from '../src/db.js';
 import { start, rawGet } from './helpers.js';
 
 let app;
-before(async () => { app = await start(createApp()); });
+before(async () => { app = await start(createApp(openDb(':memory:'))); });
 after(() => app.close());
 
 test('GET /api/health returns 200 with status ok', async () => {
