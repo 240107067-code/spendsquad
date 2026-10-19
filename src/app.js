@@ -3,10 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HttpError, sendJson } from './http.js';
-import authRoutes from './routes/auth.js';
 
-// Every API module exports (db) => [[method, path, handler], ...]
-const ROUTE_MODULES = [authRoutes];
+// Every file in src/routes/ default-exports (db) => [[method, path, handler], ...].
+// New API modules are picked up automatically.
+const ROUTES_DIR = new URL('./routes/', import.meta.url);
+const ROUTE_MODULES = await Promise.all(
+  fs.readdirSync(ROUTES_DIR).filter((f) => f.endsWith('.js')).sort()
+    .map(async (f) => (await import(new URL(f, ROUTES_DIR))).default),
+);
 
 const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const TYPES = {
