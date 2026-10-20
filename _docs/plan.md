@@ -65,8 +65,8 @@ Every user has an account (email + password).
 
 ## Assumptions (decided by the assistant during planning — open to change)
 
-- A participant may join until the challenge ends; joining late still counts
-  only weeks with their budget set
+- A participant may join until the challenge ends; a late joiner is scored for
+  every week, because expenses belong to users, not challenges (decisions.md item 7, #10)
 - A participant with zero expenses in a week has 0 % (they can win that week)
 - Leaving a challenge and deleting a challenge are not in the MVP
 - Mobile-first responsive UI (students mostly use phones)
