@@ -32,6 +32,10 @@ export function budgetInput(value) {
   return budget;
 }
 
+const byToken = (db, token) => db.prepare('SELECT * FROM challenges WHERE invite_token = ?').get(token) || fail(404, 'This invite link is not valid');
+const isParticipant = (db, challengeId, userId) =>
+  !!db.prepare('SELECT 1 FROM participants WHERE challenge_id = ? AND user_id = ?').get(challengeId, userId);
+
 export default function challengeRoutes(db) {
   return [
     ['POST', '/api/challenges', async ({ req }) => {
@@ -61,6 +65,24 @@ export default function challengeRoutes(db) {
         'SELECT c.* FROM challenges c JOIN participants p ON p.challenge_id = c.id WHERE p.user_id = ? ORDER BY c.start_week DESC, c.id DESC',
       ).all(user.id);
       return [200, { challenges: rows.map((c) => challengeToApi(db, c, { withToken: true })) }];
+    }],
+
+    ['GET', '/api/invites/:token', async ({ req, params }) => {
+      const user = requireUser(req, db);
+      const c = byToken(db, params.token);
+      return [200, { challenge: challengeToApi(db, c), joined: isParticipant(db, c.id, user.id) }];
+    }],
+
+    // No participant limit (plan.md). Late joiners are welcome until the last day:
+    // expenses belong to users, so they are scored for every week (decisions.md item 7).
+    ['POST', '/api/invites/:token/join', async ({ req, params }) => {
+      const user = requireUser(req, db);
+      const c = byToken(db, params.token);
+      if (status(c) === 'finished') fail(410, 'This challenge has ended');
+      if (isParticipant(db, c.id, user.id)) fail(409, 'You are already in this challenge');
+      const budget = budgetInput((await readJson(req)).budget);
+      db.prepare('INSERT INTO participants (challenge_id, user_id, budget) VALUES (?, ?, ?)').run(c.id, user.id, budget);
+      return [201, { challengeId: c.id }];
     }],
   ];
 }
