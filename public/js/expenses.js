@@ -42,8 +42,29 @@ export async function expensesView(ctx) {
     ctx.api.get('/api/expenses' + (ctx.route.query.week ? `?week=${encodeURIComponent(ctx.route.query.week)}` : '')),
   ]);
 
+  // Each row has Edit (swaps the row for a pre-filled form) and Delete (asks first).
+  const editableRow = (e) => {
+    const row = expenseRow(e, h('div', { class: 'row' },
+      h('button', { class: 'btn btn-sm', 'aria-label': `Edit ${e.categoryName} ${e.amount}`, onclick: () => {
+        const edit = expenseForm(categories, {
+          initial: e,
+          submitLabel: 'Save',
+          submit: async (data) => { await ctx.api.put(`/api/expenses/${e.id}`, data); await ctx.rerender(); },
+          onCancel: () => editRow.replaceWith(row),
+        });
+        const editRow = h('li', { class: 'stack', style: 'display:block' }, edit);
+        row.replaceWith(editRow);
+      } }, 'Edit'),
+      h('button', { class: 'btn btn-sm btn-danger', 'aria-label': `Delete ${e.categoryName} ${e.amount}`, onclick: async () => {
+        if (!confirm(`Delete ${e.categoryName} — ${e.amount} ₸?`)) return;
+        await ctx.api.del(`/api/expenses/${e.id}`);
+        await ctx.rerender();
+      } }, 'Delete')));
+    return row;
+  };
+
   const list = week.expenses.length
-    ? h('ul', { class: 'list' }, week.expenses.map((e) => expenseRow(e)))
+    ? h('ul', { class: 'list' }, week.expenses.map(editableRow))
     : h('div', { class: 'empty' }, week.isCurrent ? 'Nothing spent this week yet — nice! Add your first expense above.' : 'No expenses this week.');
 
   const form = expenseForm(categories, {
