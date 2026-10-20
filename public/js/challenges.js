@@ -97,6 +97,43 @@ function participantCard(p, weekIndex, me) {
       : h('div', { class: 'muted small' }, 'No expenses this week.'));
 }
 
+const nameOf = (participants, id) => participants.find((p) => p.userId === id)?.name ?? '?';
+const joinNames = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]);
+
+function overallBanner(standings, participants) {
+  const { overall } = standings;
+  if (overall.decided) {
+    const names = overall.winners.map((id) => nameOf(participants, id));
+    return h('div', { class: 'card center stack' },
+      h('div', { class: 'big' }, '🏆'),
+      h('h2', {}, `${joinNames(names)} ${names.length > 1 ? 'share the win' : 'wins the challenge'}!`),
+      h('div', { class: 'muted small' }, `${overall.wins[overall.winners[0]]} weekly win${overall.wins[overall.winners[0]] === 1 ? '' : 's'}`));
+  }
+  const past = standings.weeks.filter((w) => w.status === 'finished');
+  if (!past.length) return null;
+  return h('div', { class: 'card stack' }, h('h3', {}, 'Weekly winners so far'),
+    h('ul', { class: 'list' }, past.map((w) => h('li', {},
+      h('span', { class: 'grow' }, `Week ${standings.weeks.indexOf(w) + 1}`),
+      h('strong', {}, '🏆 ', joinNames(w.winners.map((id) => nameOf(participants, id))))))));
+}
+
+function leaderboard(week, me) {
+  const title = { upcoming: 'Starts soon — everyone at 0 %', current: 'Leaderboard (live)', finished: 'Final results' }[week.status];
+  let rank = 0;
+  return h('div', { class: 'card stack' },
+    h('h3', {}, title),
+    h('ol', { class: 'list' }, week.results.map((r, i) => {
+      const prev = week.results[i - 1];
+      if (!prev || r.spent * prev.budget !== prev.spent * r.budget) rank = i + 1; // exact ties share a rank
+      const won = week.winners.includes(r.userId);
+      return h('li', { style: 'display:block' },
+        h('div', { class: 'row spread' },
+          h('span', {}, h('strong', {}, `${rank}. `), r.name, r.userId === me ? h('span', { class: 'muted small' }, ' (you)') : null, won ? ' 🏆' : null),
+          h('span', { class: 'amount' }, `${r.percent.toFixed(1)} %`)),
+        h('div', { class: r.percent > 100 ? 'bar over' : 'bar', style: 'margin-top:4px' }, h('i', { style: `width:${Math.min(100, r.percent)}%` })));
+    })));
+}
+
 export async function challengeView(ctx) {
   let data;
   try {
@@ -122,8 +159,10 @@ export async function challengeView(ctx) {
       h('div', { class: 'row muted small' }, h('span', { class: cls }, label),
         `${shortDate(c.startWeek)} – ${shortDate(c.endDate)} · ${c.participantCount} ${c.participantCount === 1 ? 'person' : 'people'}`)),
     h('details', { class: 'card' }, h('summary', { class: 'small' }, 'Invite friends'), h('div', { style: 'margin-top:12px' }, inviteBox(c.inviteToken))),
+    overallBanner(data.standings, participants),
     tabs,
     h('div', { class: 'muted small' }, `${shortDate(selected)} – ${shortDate(addDaysIso(selected, 6))}`),
+    leaderboard(data.standings.weeks[index], ctx.user.id),
     participants.map((p) => participantCard(p, index, ctx.user.id)));
 }
 
