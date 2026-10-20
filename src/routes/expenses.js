@@ -36,6 +36,13 @@ export function weekSummary(expenses) {
   };
 }
 
+// The user's own expense, or 404 — never reveals that another user's id exists.
+function ownExpense(db, userId, id) {
+  const row = /^\d+$/.test(id) ? getExpense(db, Number(id)) : null;
+  if (!row || row.user_id !== userId) fail(404, 'Expense not found');
+  return row;
+}
+
 export default function expenseRoutes(db) {
   return [
     ['GET', '/api/expenses', async ({ req, query }) => {
@@ -63,6 +70,24 @@ export default function expenseRoutes(db) {
         'INSERT INTO expenses (user_id, category_id, amount, note, date) VALUES (?, ?, ?, ?, ?)',
       ).run(user.id, e.categoryId, e.amount, e.note, e.date);
       return [201, { expense: expenseToApi(getExpense(db, lastInsertRowid)) }];
+    }],
+
+    // Editing is allowed at any time (plan.md); every edit is marked so friends can see it.
+    ['PUT', '/api/expenses/:id', async ({ req, params }) => {
+      const user = requireUser(req, db);
+      const row = ownExpense(db, user.id, params.id);
+      const e = expenseInput(db, user.id, await readJson(req));
+      db.prepare(
+        "UPDATE expenses SET category_id = ?, amount = ?, note = ?, date = ?, edited = 1, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?",
+      ).run(e.categoryId, e.amount, e.note, e.date, row.id);
+      return [200, { expense: expenseToApi(getExpense(db, row.id)) }];
+    }],
+
+    ['DELETE', '/api/expenses/:id', async ({ req, params }) => {
+      const user = requireUser(req, db);
+      const row = ownExpense(db, user.id, params.id);
+      db.prepare('DELETE FROM expenses WHERE id = ?').run(row.id);
+      return [204, null];
     }],
   ];
 }
