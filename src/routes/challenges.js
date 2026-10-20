@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { fail, readJson, requireUser } from '../http.js';
 import { isIsoDate, today, wholeNumber, MAX_AMOUNT } from '../validate.js';
 import { weekStart, isMonday, addDays } from '../week.js';
+import { expensesBetween } from './expenses.js';
 
 export const endDate = (c) => addDays(c.start_week, c.weeks * 7 - 1);
 
@@ -36,6 +37,25 @@ const byToken = (db, token) => db.prepare('SELECT * FROM challenges WHERE invite
 const isParticipant = (db, challengeId, userId) =>
   !!db.prepare('SELECT 1 FROM participants WHERE challenge_id = ? AND user_id = ?').get(challengeId, userId);
 
+// Full transparency (plan.md): every participant sees every expense of every other
+// participant inside the challenge weeks — but only display names, never emails.
+export function challengeDetail(db, c) {
+  const weekStarts = Array.from({ length: c.weeks }, (_, i) => addDays(c.start_week, i * 7));
+  const people = db.prepare(
+    'SELECT u.id, u.name, p.budget FROM participants p JOIN users u ON u.id = p.user_id WHERE p.challenge_id = ? ORDER BY p.joined_at, u.id',
+  ).all(c.id);
+  return people.map((p) => ({
+    userId: p.id,
+    name: p.name,
+    budget: p.budget,
+    weeks: weekStarts.map((ws) => {
+      const expenses = expensesBetween(db, p.id, ws, addDays(ws, 6))
+        .map(({ amount, categoryName, note, date, edited }) => ({ amount, categoryName, note, date, edited }));
+      return { weekStart: ws, total: expenses.reduce((sum, e) => sum + e.amount, 0), expenses };
+    }),
+  }));
+}
+
 export default function challengeRoutes(db) {
   return [
     ['POST', '/api/challenges', async ({ req }) => {
@@ -65,6 +85,14 @@ export default function challengeRoutes(db) {
         'SELECT c.* FROM challenges c JOIN participants p ON p.challenge_id = c.id WHERE p.user_id = ? ORDER BY c.start_week DESC, c.id DESC',
       ).all(user.id);
       return [200, { challenges: rows.map((c) => challengeToApi(db, c, { withToken: true })) }];
+    }],
+
+    ['GET', '/api/challenges/:id', async ({ req, params }) => {
+      const user = requireUser(req, db);
+      const c = /^\d+$/.test(params.id) && db.prepare('SELECT * FROM challenges WHERE id = ?').get(Number(params.id));
+      // Non-participants get the same 404 as a missing challenge, so ids cannot be probed.
+      if (!c || !isParticipant(db, c.id, user.id)) fail(404, 'Challenge not found');
+      return [200, { challenge: challengeToApi(db, c, { withToken: true }), participants: challengeDetail(db, c) }];
     }],
 
     ['GET', '/api/invites/:token', async ({ req, params }) => {
