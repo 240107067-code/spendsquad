@@ -78,6 +78,40 @@ export function challengeView() {
   return h('section', { class: 'stack' }, h('h1', {}, 'Challenge'));
 }
 
-export function inviteView() {
-  return h('section', { class: 'stack' }, h('h1', {}, 'Invite'));
+// #/invite/:token — logged-out visitors never get here: main.js sends them to
+// #/login?next=#/invite/:token first and brings them back afterwards.
+export async function inviteView(ctx) {
+  let invite;
+  try {
+    invite = await ctx.api.get(`/api/invites/${encodeURIComponent(ctx.route.params.token)}`);
+  } catch (err) {
+    if (err.status !== 404) throw err;
+    return h('section', { class: 'stack' }, h('div', { class: 'card empty' }, '🔗 This invite link is not valid. Ask your friend to send it again.'));
+  }
+  const c = invite.challenge;
+  const [label, cls] = STATUS[c.status];
+  const info = h('div', { class: 'card stack center' },
+    h('div', { class: 'big' }, '🏁'),
+    h('h1', {}, c.name),
+    h('div', {}, h('span', { class: cls }, label)),
+    h('p', { class: 'muted' }, `${shortDate(c.startWeek)} – ${shortDate(c.endDate)} · ${c.weeks} week${c.weeks > 1 ? 's' : ''} · ${c.participantCount} ${c.participantCount === 1 ? 'person' : 'people'} in`));
+
+  if (invite.joined) {
+    return h('section', { class: 'stack' }, info,
+      h('div', { class: 'card stack center' }, h('strong', {}, "You're in! 💪"), h('a', { class: 'btn btn-primary btn-block', href: `#/challenges/${c.id}` }, 'Open challenge')));
+  }
+  if (c.status === 'finished') {
+    return h('section', { class: 'stack' }, info, h('div', { class: 'card empty' }, 'This challenge has ended — you can no longer join.'));
+  }
+  const form = h('form', { class: 'stack', novalidate: true },
+    h('p', { class: 'muted small' }, 'Lowest % of your own budget wins each week. Your friends will see your expenses during the challenge.'),
+    h('label', { class: 'field' }, h('span', {}, 'My weekly budget, ₸'),
+      h('input', { class: 'input', name: 'budget', type: 'number', inputmode: 'numeric', min: 1, step: 1, placeholder: '20000', required: true })),
+    h('p', { class: 'error', role: 'alert' }),
+    h('button', { class: 'btn btn-primary btn-block', type: 'submit' }, 'Join challenge'));
+  formHandler(form, async ({ budget }) => {
+    const { challengeId } = await ctx.api.post(`/api/invites/${encodeURIComponent(ctx.route.params.token)}/join`, { budget: Number(budget) });
+    location.hash = `#/challenges/${challengeId}`;
+  });
+  return h('section', { class: 'stack' }, info, h('div', { class: 'card' }, form));
 }
