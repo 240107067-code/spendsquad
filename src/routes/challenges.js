@@ -3,6 +3,7 @@ import { fail, readJson, requireUser } from '../http.js';
 import { isIsoDate, today, wholeNumber, MAX_AMOUNT } from '../validate.js';
 import { weekStart, isMonday, addDays } from '../week.js';
 import { expensesBetween } from './expenses.js';
+import { score } from '../scoring.js';
 
 export const endDate = (c) => addDays(c.start_week, c.weeks * 7 - 1);
 
@@ -92,7 +93,12 @@ export default function challengeRoutes(db) {
       const c = /^\d+$/.test(params.id) && db.prepare('SELECT * FROM challenges WHERE id = ?').get(Number(params.id));
       // Non-participants get the same 404 as a missing challenge, so ids cannot be probed.
       if (!c || !isParticipant(db, c.id, user.id)) fail(404, 'Challenge not found');
-      return [200, { challenge: challengeToApi(db, c, { withToken: true }), participants: challengeDetail(db, c) }];
+      const participants = challengeDetail(db, c);
+      return [200, {
+        challenge: challengeToApi(db, c, { withToken: true }),
+        participants,
+        standings: score(c, participants, today()),
+      }];
     }],
 
     ['GET', '/api/invites/:token', async ({ req, params }) => {
