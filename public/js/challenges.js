@@ -1,5 +1,5 @@
 import { h, formHandler } from './dom.js';
-import { shortDate, todayIso } from './format.js';
+import { shortDate, todayIso, money, dayLabel } from './format.js';
 
 const STATUS = { upcoming: ['Starts soon', 'badge'], active: ['Active', 'badge badge-success'], finished: ['Finished', 'badge badge-warn'] };
 
@@ -74,8 +74,63 @@ export async function challengesView(ctx) {
     h('details', { class: 'card', open: challenges.length === 0 }, h('summary', {}, h('strong', {}, 'New challenge')), h('div', { style: 'margin-top:12px' }, form)));
 }
 
-export function challengeView() {
-  return h('section', { class: 'stack' }, h('h1', {}, 'Challenge'));
+// Which week to show first: ?week= if valid, else the current week, else the closest one.
+export function pickWeek(weekStarts, asked, today = todayIso()) {
+  if (weekStarts.includes(asked)) return asked;
+  const current = [...weekStarts].reverse().find((w) => w <= today);
+  return current ?? weekStarts[0];
+}
+
+function participantCard(p, weekIndex, me) {
+  const week = p.weeks[weekIndex];
+  return h('div', { class: 'card stack' },
+    h('div', { class: 'row spread' },
+      h('strong', {}, p.name, p.userId === me ? h('span', { class: 'muted small' }, ' (you)') : null),
+      h('span', { class: 'amount' }, money(week.total), h('span', { class: 'muted small' }, ` / ${money(p.budget)}`))),
+    week.expenses.length
+      ? h('ul', { class: 'list' }, week.expenses.map((e) => h('li', {},
+        h('div', { class: 'grow' },
+          h('div', {}, h('strong', {}, e.categoryName), e.note ? h('span', { class: 'muted' }, ' · ', e.note) : null,
+            e.edited ? h('span', {}, ' ', h('span', { class: 'badge badge-warn' }, 'edited')) : null),
+          h('div', { class: 'muted small' }, dayLabel(e.date))),
+        h('span', { class: 'amount' }, money(e.amount)))))
+      : h('div', { class: 'muted small' }, 'No expenses this week.'));
+}
+
+export async function challengeView(ctx) {
+  let data;
+  try {
+    data = await ctx.api.get(`/api/challenges/${ctx.route.params.id}`);
+  } catch (err) {
+    if (err.status !== 404) throw err;
+    return h('section', { class: 'stack' }, h('div', { class: 'card empty' }, 'Challenge not found — or you are not part of it.'));
+  }
+  const { challenge: c, participants } = data;
+  const weekStarts = participants[0].weeks.map((w) => w.weekStart);
+  const selected = pickWeek(weekStarts, ctx.route.query.week);
+  const index = weekStarts.indexOf(selected);
+  const [label, cls] = STATUS[c.status];
+
+  const tabs = h('div', { class: 'row' }, weekStarts.map((w, i) => h('a', {
+    class: w === selected ? 'btn btn-sm btn-primary' : 'btn btn-sm',
+    href: `#/challenges/${c.id}?week=${w}`,
+  }, `Week ${i + 1}`)));
+
+  return h('section', { class: 'stack' },
+    h('div', {},
+      h('h1', { style: 'margin-bottom:4px' }, c.name),
+      h('div', { class: 'row muted small' }, h('span', { class: cls }, label),
+        `${shortDate(c.startWeek)} – ${shortDate(c.endDate)} · ${c.participantCount} ${c.participantCount === 1 ? 'person' : 'people'}`)),
+    h('details', { class: 'card' }, h('summary', { class: 'small' }, 'Invite friends'), h('div', { style: 'margin-top:12px' }, inviteBox(c.inviteToken))),
+    tabs,
+    h('div', { class: 'muted small' }, `${shortDate(selected)} – ${shortDate(addDaysIso(selected, 6))}`),
+    participants.map((p) => participantCard(p, index, ctx.user.id)));
+}
+
+function addDaysIso(iso, n) {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
 // #/invite/:token — logged-out visitors never get here: main.js sends them to
